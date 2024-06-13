@@ -3,6 +3,7 @@ const { MongoClient } = require('mongodb');
 
 const app = express();
 const port = 3000;
+const cors = require('cors');
 
 app.use(express.json());
 
@@ -17,7 +18,7 @@ client.connect()
     console.log('Connected to MongoDB');
     const db = client.db('testdb'); // Replace 'testdb' with your database name
     const collection = db.collection('testcollection'); // Replace 'testcollection' with your collection name
-
+    app.use(cors());
     app.post('/insert', async (req, res) => {
       try {
         const document = req.body;
