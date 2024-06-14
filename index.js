@@ -1,7 +1,9 @@
 const express = require('express');
 const { MongoClient } = require('mongodb');
-const express = require('express');
 const cors = require('cors')
+require('dotenv').config();
+const { OpenAIClient, AzureKeyCredential} = require("@azure/openai");
+
 
 const app = express();
 const port = 3000;
@@ -10,9 +12,14 @@ app.use(express.json());
 
 // MongoDB connection URI
 const uri = process.env.AZURE_COSMOSDB_CONNECTION_STRING;
+console.log(uri)
 
 // MongoDB client
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+
+//open ai client
+const aoaiClient = new OpenAIClient("https://" + process.env.AZURE_OPENAI_API_INSTANCE_NAME + ".openai.azure.com/", 
+                    new AzureKeyCredential(process.env.AZURE_OPENAI_API_KEY));
 
 
 client.connect()
@@ -45,7 +52,7 @@ client.connect()
   });
 
 async function generateEmbeddings(text) {
-    const embeddings = await aoaiClient.getEmbeddings(embeddingsDeploymentName, text);
+    const embeddings = await aoaiClient.getEmbeddings(process.env.AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME, text);
     // Rest period to avoid rate limiting on Azure OpenAI  
     await new Promise(resolve => setTimeout(resolve, 500));
     return embeddings.data[0].embedding;
@@ -65,7 +72,7 @@ async function addCollectionContentVectorField(doc,db, collectionName) {
             { '$set': { 'contentVector': contentVector } },
             { upsert: true }
         );
-        console.log(`Generated ${i+1} content vectors for document`);
+        console.log(`Generated content vector for document`);
 
     //check to see if the vector index already exists on the collection
     console.log(`Checking if vector index exists in the ${collectionName} collection`)
