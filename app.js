@@ -2,13 +2,11 @@ const express = require('express');
 const { MongoClient } = require('mongodb');
 const cors = require('cors')
 require('dotenv').config();
+const swagger = require('./swagger');
 const { OpenAIClient, AzureKeyCredential} = require("@azure/openai");
+const CosmicWorksAIAgent = require('./cosmic_works/cosmic_works_ai_agent');
 
-
-const app = express();
-const port = 3000;
-
-app.use(express.json());
+let agentInstancesMap = new Map();
 
 // MongoDB connection URI
 const uri = process.env.AZURE_COSMOSDB_CONNECTION_STRING;
@@ -21,13 +19,21 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 const aoaiClient = new OpenAIClient("https://" + process.env.AZURE_OPENAI_API_INSTANCE_NAME + ".openai.azure.com/", 
                     new AzureKeyCredential(process.env.AZURE_OPENAI_API_KEY));
 
+const app = express();
+const port = 4242;
+app.use(express.json());
+app.use(cors());
+
+app.get('/', (req, res) => {
+    res.send({ "status": "ready" });
+});
 
 client.connect()
   .then(() => {
     console.log('Connected to MongoDB');
     const db = client.db('testdb'); // Replace 'testdb' with your database name
     const collection = db.collection('testcollection'); // Replace 'testcollection' with your collection name
-    app.use(cors());
+
     app.post('/insert', async (req, res) => {
       try {
         const document = req.body;
@@ -102,3 +108,21 @@ async function addCollectionContentVectorField(doc,db, collectionName) {
         console.log(`Vector index already exists on contentVector field in the ${collectionName} collection`);
     }
 }
+
+app.post('/ai', async (req, res) => {
+  let agent = {};
+  let prompt = req.body.prompt;
+  let session_id = req.body.session_id;
+
+  if (agentInstancesMap.has(session_id)) {
+      agent = agentInstancesMap.get(session_id);
+  } else {
+      agent = new CosmicWorksAIAgent();
+      agentInstancesMap.set(session_id, agent);
+  }
+
+  let result = await agent.executeAgent(prompt);
+  res.send({ message: result });
+});
+
+swagger(app)
