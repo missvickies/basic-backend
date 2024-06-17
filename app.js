@@ -6,8 +6,6 @@ const swagger = require('./swagger');
 const { OpenAIClient, AzureKeyCredential} = require("@azure/openai");
 const CosmicWorksAIAgent = require('./cosmic_works/cosmic_works_ai_agent');
 
-let agentInstancesMap = new Map();
-
 // MongoDB connection URI
 const uri = process.env.AZURE_COSMOSDB_CONNECTION_STRING;
 console.log(uri)
@@ -19,13 +17,31 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 const aoaiClient = new OpenAIClient("https://" + process.env.AZURE_OPENAI_API_INSTANCE_NAME + ".openai.azure.com/", 
                     new AzureKeyCredential(process.env.AZURE_OPENAI_API_KEY));
 
+let agentInstancesMap = new Map();
+
 const app = express();
-const port = 4242;
 app.use(express.json());
-app.use(cors());
+app.use(cors()); // enable all CORS requests
+
 
 app.get('/', (req, res) => {
     res.send({ "status": "ready" });
+});
+
+app.post('/ai', async (req, res) => {
+  let agent = {};
+  let prompt = req.body.prompt;
+  let session_id = req.body.session_id;
+
+  if (agentInstancesMap.has(session_id)) {
+      agent = agentInstancesMap.get(session_id);
+  } else {
+      agent = new CosmicWorksAIAgent();
+      agentInstancesMap.set(session_id, agent);
+  }
+
+  let result = await agent.executeAgent(prompt);
+  res.send({ message: result });
 });
 
 client.connect()
@@ -109,20 +125,24 @@ async function addCollectionContentVectorField(doc,db, collectionName) {
     }
 }
 
-app.post('/ai', async (req, res) => {
-  let agent = {};
-  let prompt = req.body.prompt;
-  let session_id = req.body.session_id;
-
-  if (agentInstancesMap.has(session_id)) {
-      agent = agentInstancesMap.get(session_id);
-  } else {
-      agent = new CosmicWorksAIAgent();
-      agentInstancesMap.set(session_id, agent);
-  }
-
-  let result = await agent.executeAgent(prompt);
-  res.send({ message: result });
-});
-
 swagger(app)
+
+// parse out hosting port from cmd arguments if passed in
+// otherwise default to port 4242
+var port = (() => {
+  const { argv } = require('node:process');
+  var port = 4242; // default
+  if (argv){
+      argv.forEach((v, i) => {
+          if (v && (v.toLowerCase().startsWith('port=')))
+          {
+              port = v.substring(5);
+          }
+      });
+  }
+  return port;
+})();
+
+app.listen(port, () => {
+  console.log(`Server started on port ${port}`);
+});
