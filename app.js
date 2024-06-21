@@ -5,6 +5,7 @@ const swagger = require('./swagger');
 const CosmicWorksAIAgent = require('./cosmic_works/cosmic_works_ai_agent');
 const addCollectionContentVectorField = require("./helpers")
 const { MongoClient } = require('mongodb');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 app.use(express.json());
@@ -28,7 +29,7 @@ client.connect()
 
 
 const db = client.db('testdb'); // Replace 'testdb' with your database name
-const collection = db.collection('testcollection'); // Replace 'testcollection' with your collection name
+// const collection = db.collection('testcollection'); // Replace 'testcollection' with your collection name
 
 /* Health probe endpoint. */
 /**
@@ -71,10 +72,12 @@ app.post('/ai', async (req, res) => {
   let prompt = req.body.prompt;
   let session_id = req.body.session_id;
 
+  console.log("POST /AI" , session_id)
+
   if (agentInstancesMap.has(session_id)) {
       agent = agentInstancesMap.get(session_id);
   } else {
-      agent = new CosmicWorksAIAgent();
+      agent = new CosmicWorksAIAgent(session_id);
       agentInstancesMap.set(session_id, agent);
   }
 
@@ -82,12 +85,32 @@ app.post('/ai', async (req, res) => {
   res.send({ message: result });
 });
 
+app.get('/createSessionId',async (req, res) => {
+  try{
+    sessionId = uuidv4();
+    res.status(200).send({sessionID: sessionId});
+  } catch (error) {
+    res.status(500).send('Error creating session id' + error);
+  }
+})
+
 
 app.post('/insert', async (req, res) => {
     try {
-      const document = req.body;
+      const {resume,sessionID} = req.body;
+      if(!resume || !sessionID){
+        return res.status(400).send('Missing resume or sessionID');
+      }
+      //const document = req.body;
+      const collections = await db.listCollections({ name: sessionID }).toArray();
+      
+      if(collections.length == 0){
+        db.createCollection(sessionID);
+      }
+      const collection = db.collection(sessionID);
+      const document = {resume};
       const result = await collection.insertOne(document);
-      addCollectionContentVectorField(document,db,'testcollection').then(x => {
+      addCollectionContentVectorField(document,db,sessionID).then(x => {
         res.status(200).send(`Document inserted with _id: ${result.insertedId}`);
     })
     } catch (error) {

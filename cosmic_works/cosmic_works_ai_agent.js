@@ -12,18 +12,23 @@ const { ChatOpenAI, OpenAIEmbeddings } = require("@langchain/openai");
 const { AzureCosmosDBVectorStore } = require("@langchain/community/vectorstores/azure_cosmosdb");
 
 class CosmicWorksAIAgent {
-    constructor() {
+    constructor(sessionID) {
         // set up the MongoDB client
         this.dbClient = new MongoClient(process.env.AZURE_COSMOSDB_CONNECTION_STRING);
+
+        console.log("CONSTRUCTOR",sessionID)
         // set up the Azure Cosmos DB vector store
         const azureCosmosDBConfig = {
             client: this.dbClient,
             databaseName: "testdb",
-            collectionName: "testcollection",
+            collectionName: sessionID,
             indexName: "VectorSearchIndex",
             embeddingKey: "contentVector",
             textKey: "_id"
         }
+
+        console.log(azureCosmosDBConfig)
+        
         this.vectorStore = new AzureCosmosDBVectorStore(new OpenAIEmbeddings(), azureCosmosDBConfig);
 
         // set up the OpenAI chat model
@@ -45,6 +50,14 @@ class CosmicWorksAIAgent {
         })();
     }
 
+    // get sessionID(){
+    //     return this.sessionID
+    // }
+    // set sessionID(value){
+    //     this.sessionID = value;
+    //     console.log(this._sessionID);
+    // }
+    
     async formatDocuments(docs) {
         // Prepares the product list for the system prompt.  
         let strDocs = "";
@@ -83,9 +96,11 @@ class CosmicWorksAIAgent {
 
         You answer questions as if you were me, and respond to my questions as if I were interviewing you for a job.
 
+        Your name is my name.
+
         Speak conversationally. 
 
-        english is my second language.
+        english is my second language, but you should not mention that. 
 
         if there is a time, please state it. Make sure to highlight some details of what i did. 
         
@@ -98,34 +113,33 @@ class CosmicWorksAIAgent {
         // use to decide which tool to use.
 
         // A tool that retrieves product information from Cosmic Works based on the user's question.
-        const productsRetrieverTool = new DynamicTool({
-            name: "products_retriever_tool",
-            description: `Searches Cosmic Works product information for similar products based on the question. 
-                    Returns the product information in JSON format.`,
+        const resume_retrieval_tool = new DynamicTool({
+            name: "resume_retrieval_tool",
+            description: `Searches the database for resume information`,
             func: async (input) => await retrieverChain.invoke(input),
         });
 
         // A tool that will lookup a product by its SKU. Note that this is not a vector store lookup.
-        const productLookupTool = new DynamicTool({
-            name: "product_sku_lookup_tool",
-            description: `Searches Cosmic Works product information for a single product by its SKU.
-                    Returns the product information in JSON format.
-                    If the product is not found, returns null.`,
-            func: async (input) => {
-                const db = this.dbClient.db("cosmic_works");
-                const products = db.collection("products");
-                const doc = await products.findOne({ "sku": input });
-                if (doc) {
-                    //remove the contentVector property to save on tokens
-                    delete doc.contentVector;
-                }
-                return doc ? JSON.stringify(doc, null, '\t') : null;
-            },
-        });
+        // const productLookupTool = new DynamicTool({
+        //     name: "product_sku_lookup_tool",
+        //     description: `Searches Cosmic Works product information for a single product by its SKU.
+        //             Returns the product information in JSON format.
+        //             If the product is not found, returns null.`,
+        //     func: async (input) => {
+        //         const db = this.dbClient.db("cosmic_works");
+        //         const products = db.collection("products");
+        //         const doc = await products.findOne({ "sku": input });
+        //         if (doc) {
+        //             //remove the contentVector property to save on tokens
+        //             delete doc.contentVector;
+        //         }
+        //         return doc ? JSON.stringify(doc, null, '\t') : null;
+        //     },
+        // });
 
         // Generate OpenAI function metadata to provide to the LLM
         // The LLM will use this metadata to decide which tool to use based on the description.
-        const tools = [productsRetrieverTool, productLookupTool];
+        const tools = [resume_retrieval_tool];
         const modelWithFunctions = this.chatModel.bind({
             functions: tools.map((tool) => convertToOpenAIFunction(tool)),
         });
@@ -191,4 +205,4 @@ class CosmicWorksAIAgent {
     }
 };
 
-module.exports = CosmicWorksAIAgent;
+module.exports = CosmicWorksAIAgent
